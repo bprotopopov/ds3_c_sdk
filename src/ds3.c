@@ -48,7 +48,6 @@ struct _ds3_request{
 
     //These next few elements are only for the bulk commands
     ds3_bulk_object_list* object_list;
-    ds3_chunk_ordering chunk_ordering;
 };
 
 struct _ds3_metadata {
@@ -1066,6 +1065,14 @@ void ds3_request_set_version(ds3_request* _request, const char* version) {
     _set_query_param(_request, "version", version);
 }
 
+void ds3_request_set_client_process_chunks_in_order(ds3_request* _request, ds3_chunk_ordering in_order) {
+    if (in_order == IN_ORDER) {
+        _set_query_param(_request, "processChunksInOrder", "true");
+    } else {
+        _set_query_param(_request, "processChunksInOrder", "false");
+    }
+}
+
 static struct _ds3_request* _common_request_init(http_verb verb, ds3_str* path) {
     struct _ds3_request* request = g_new0(struct _ds3_request, 1);
     request->headers = _create_hash_table();
@@ -1176,7 +1183,7 @@ ds3_request* ds3_init_get_bulk(const char* bucket_name, ds3_bulk_object_list* ob
     struct _ds3_request* request = _common_request_init(HTTP_PUT, _build_path("/_rest_/bucket/", bucket_name, NULL));
     _set_query_param((ds3_request*) request, "operation", "start_bulk_get");
     request->object_list = object_list;
-    request->chunk_ordering = order;
+    ds3_request_set_client_process_chunks_in_order((ds3_request*) request, order);
     return (ds3_request*) request;
 }
 
@@ -1191,16 +1198,6 @@ ds3_request* ds3_init_get_physical_placement(const char* bucket_name, ds3_bulk_o
     struct _ds3_request* request = _common_request_init(HTTP_PUT, _build_path("/_rest_/bucket/", bucket_name, NULL));
     _set_query_param((ds3_request*) request, "operation", "get_physical_placement");
     request->object_list = object_list;
-    return (ds3_request*) request;
-}
-
-ds3_request* ds3_init_allocate_chunk(const char* chunk_id) {
-    char* path = g_strconcat("/_rest_/job_chunk/", chunk_id, NULL);
-    ds3_str* path_str = ds3_str_init(path);
-    struct _ds3_request* request = _common_request_init(HTTP_PUT, path_str);
-
-    _set_query_param((ds3_request*) request, "operation", "allocate");
-    g_free(path);
     return (ds3_request*) request;
 }
 
@@ -1892,17 +1889,6 @@ static ds3_write_optimization _match_write_optimization(const ds3_log* log, cons
     }
 }
 
-static ds3_chunk_ordering _match_chunk_order(const ds3_log* log, const xmlChar* text) {
-    if (xmlStrcmp(text, (const xmlChar*) "IN_ORDER") == 0) {
-        return IN_ORDER;
-    } else if (xmlStrcmp(text, (const xmlChar*) "NONE") == 0) {
-        return NONE;
-    } else {
-        LOG(log, DS3_ERROR, "ERROR: Unknown chunk processing order guaruntee value of '%s'.  Returning IN_ORDER for safety.\n", text);
-        return NONE;
-    }
-}
-
 static ds3_job_status _match_job_status(const ds3_log* log, const xmlChar* text) {
     if (xmlStrcmp(text, (const xmlChar*) "IN_PROGRESS") == 0) {
         return IN_PROGRESS;
@@ -1985,12 +1971,7 @@ static ds3_error* _parse_bulk_response_attributes(const ds3_log* log, xmlDocPtr 
             response->write_optimization = _match_write_optimization(log, text);
             xmlFree(text);
         } else if (attribute_equal(attribute, "ChunkClientProcessingOrderGuarantee") == true) {
-            text = xmlNodeListGetString(doc, attribute->children, 1);
-            if (text == NULL) {
-                continue;
-            }
-            response->chunk_order = _match_chunk_order(log, text);
-            xmlFree(text);
+            response->process_chunks_in_order = xml_get_bool_from_attribute(log, doc, attribute);
         } else if (attribute_equal(attribute, "Status") == true) {
             text = xmlNodeListGetString(doc, attribute->children, 1);
             if (text == NULL) {
@@ -2045,17 +2026,9 @@ static ds3_error* _parse_master_object_list(const ds3_log* log, xmlDocPtr doc, d
     return NULL;
 }
 
-static char* _get_chunk_order_str(ds3_chunk_ordering order) {
-    if (order == NONE) {
-        return "NONE";
-    } else {
-        return "IN_ORDER";
-    }
-}
-
 #define LENGTH_BUFF_SIZE 21
 
-static xmlDocPtr _generate_xml_objects_list(const ds3_bulk_object_list* obj_list, object_list_type list_type, ds3_chunk_ordering order) {
+static xmlDocPtr _generate_xml_objects_list(const ds3_bulk_object_list* obj_list, object_list_type list_type) {
     char size_buff[LENGTH_BUFF_SIZE]; //The max size of an uint64_t should be 20 characters
     xmlDocPtr doc;
     ds3_bulk_object obj;
@@ -2067,10 +2040,6 @@ static xmlDocPtr _generate_xml_objects_list(const ds3_bulk_object_list* obj_list
         objects_node = xmlNewNode(NULL, (xmlChar*) "Delete");
     } else {
         objects_node = xmlNewNode(NULL, (xmlChar*) "Objects");
-    }
-
-    if (list_type == BULK_GET) {
-        xmlSetProp(objects_node, (xmlChar*) "ChunkClientProcessingOrderGuarantee", (xmlChar*) _get_chunk_order_str(order));
     }
 
     for (i = 0; i < obj_list->size; i++) {
@@ -2137,7 +2106,7 @@ ds3_error* ds3_delete_objects(const ds3_client* client, const ds3_request* _requ
     obj_list = request->object_list;
 
     // The chunk ordering is not used.  Just pass in NONE.
-    doc = _generate_xml_objects_list(obj_list, BULK_DELETE, NONE);
+    doc = _generate_xml_objects_list(obj_list, BULK_DELETE);
 
     xmlDocDumpFormatMemory(doc, &xml_buff, &buff_size, 1);
 
@@ -2201,7 +2170,7 @@ ds3_error* ds3_get_physical_placement(const ds3_client* client, const ds3_reques
     obj_list = request->object_list;
 
     // The chunk ordering is not used.  Just pass in NONE.
-    doc = _generate_xml_objects_list(obj_list, GET_PHYSICAL_PLACEMENT, NONE);
+    doc = _generate_xml_objects_list(obj_list, GET_PHYSICAL_PLACEMENT);
 
     xmlDocDumpFormatMemory(doc, &xml_buff, &buff_size, 1);
 
@@ -2311,7 +2280,7 @@ ds3_error* ds3_bulk(const ds3_client* client, const ds3_request* _request, ds3_b
     memset(&send_buff, 0, sizeof(ds3_xml_send_buff));
     obj_list = request->object_list;
 
-    doc = _generate_xml_objects_list(obj_list, _bulk_request_type(_request), _request->chunk_ordering);
+    doc = _generate_xml_objects_list(obj_list, _bulk_request_type(_request));
 
     xmlDocDumpFormatMemory(doc, &xml_buff, &buff_size, 1);
 
@@ -2350,64 +2319,6 @@ ds3_error* ds3_bulk(const ds3_client* client, const ds3_request* _request, ds3_b
         return error_response;
     }
 
-    return NULL;
-}
-
-ds3_error* ds3_allocate_chunk(const ds3_client* client, const ds3_request* request, ds3_allocate_chunk_response** response) {
-    ds3_error* error = NULL;
-    GByteArray* xml_blob = g_byte_array_new();
-    ds3_allocate_chunk_response* ds3_response = NULL;
-    ds3_bulk_object_list* object_list = NULL;
-    GHashTable* response_headers = NULL;
-    ds3_response_header* retry_after_header;
-    xmlDocPtr doc;
-    xmlNodePtr root;
-
-    error = _net_process_request(client, request, xml_blob, load_buffer, NULL, NULL, &response_headers);
-
-    if (error != NULL) {
-        g_byte_array_free(xml_blob, TRUE);
-        return error;
-    }
-
-    ds3_response = g_new0(ds3_allocate_chunk_response, 1);
-
-    // Start processing the data that was received back.
-    doc = xmlParseMemory((const char*) xml_blob->data, xml_blob->len);
-    if (doc == NULL) {
-        g_byte_array_free(xml_blob, TRUE);
-        retry_after_header = (ds3_response_header*)g_hash_table_lookup(response_headers, "Retry-After");
-        if (retry_after_header != NULL) {
-            ds3_str* retry_value = _ds3_response_header_get_first(retry_after_header);
-            ds3_response->retry_after = g_ascii_strtoull(retry_value->value, NULL, 10);
-        } else {
-            g_hash_table_destroy(response_headers);
-            return _ds3_create_error(DS3_ERROR_REQUEST_FAILED, "We did not get a response and did not find the 'Retry-After Header'");
-        }
-        g_hash_table_destroy(response_headers);
-        return NULL;
-    }
-
-    root = xmlDocGetRootElement(doc);
-    if (element_equal(root, "Objects")  == true) {
-        object_list = _parse_bulk_objects(client->log, doc, root);
-        ds3_response->objects = object_list;
-    } else {
-        char* message = g_strconcat("Expected the root element to be 'Objects'.  The actual response is: ", root->name, NULL);
-        xmlFreeDoc(doc);
-        error = _ds3_create_error(DS3_ERROR_INVALID_XML, message);
-        g_free(message);
-        g_byte_array_free(xml_blob, TRUE);
-        g_hash_table_destroy(response_headers);
-        return error;
-    }
-
-    xmlFreeDoc(doc);
-    g_byte_array_free(xml_blob, TRUE);
-    if (response_headers != NULL) {
-        g_hash_table_destroy(response_headers);
-    }
-    *response = ds3_response;
     return NULL;
 }
 
@@ -2949,18 +2860,6 @@ void ds3_free_bulk_object_list(ds3_bulk_object_list* object_list) {
 
     g_free(object_list->list);
     g_free(object_list);
-}
-
-void ds3_free_allocate_chunk_response(ds3_allocate_chunk_response* response) {
-    if (response == NULL) {
-        return;
-    }
-
-    if (response->objects != NULL) {
-        ds3_free_bulk_object_list(response->objects);
-    }
-
-    g_free(response);
 }
 
 void ds3_free_available_chunks_response(ds3_get_available_chunks_response* response) {
