@@ -21,16 +21,7 @@
 extern "C" {
 #endif
 
-#include <glib.h>
-
-struct _ds3_string_multimap {
-    GHashTable* hash; //key is ds3_str, values are a GPtrArray of ds3_str
-};
-
-typedef struct _ds3_string_multimap_entry{
-    ds3_str*   key;
-    GPtrArray* values; // A ds3_str list of the header values
-}ds3_string_multimap_entry;
+#include "ds3_string_multimap.h"
 
 GHashTable* ds3_string_multimap_get_hashtable(const ds3_string_multimap* mp);
 

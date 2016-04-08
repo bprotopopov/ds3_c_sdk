@@ -2,15 +2,14 @@ AC_INIT([ds3], [1.2.0], [SDKDeveloper@spectralogic.com])
 AC_CONFIG_MACRO_DIR([m4])
 AC_PROG_CC
 
-AM_INIT_AUTOMAKE([foreign -Wall -Werror])
-AM_PROG_AR
+AM_INIT_AUTOMAKE([-Wall -Werror foreign])
 AM_PROG_CC_C_O
 
 LT_INIT
 
-GLIB2_CHECK="glib-2.0 >= 2.34"
-LIBCURL_CHECK="libcurl >= 7.29"
-LIBXML2_CHECK="libxml-2.0 >= 2.9"
+GLIB2_CHECK="glib-2.0 >= 2.28"
+LIBCURL_CHECK="libcurl >= 7.19"
+LIBXML2_CHECK="libxml-2.0 >= 2.7"
 
 PKG_CHECK_MODULES([GLIB2], $GLIB2_CHECK)
 PKG_CHECK_MODULES([LIBCURL], $LIBCURL_CHECK)

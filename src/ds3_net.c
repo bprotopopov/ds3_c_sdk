@@ -14,6 +14,7 @@
  */
 
 #include <curl/curl.h>
+#include <openssl/hmac.h>
 
 #include "ds3_request.h"
 #include "ds3.h"
@@ -126,10 +127,9 @@ static char* _generate_date_string(void) {
 
 static char* _net_compute_signature(const ds3_log* log, const ds3_creds* creds, http_verb verb, char* resource_name,
                              char* date, char* content_type, char* checksum_value, char* amz_headers) {
-    GHmac* hmac;
     gchar* signature;
-    gsize bufSize = 256;
-    guint8 buffer[256];
+    unsigned int bufSize = 0;
+    unsigned char buffer[256];
 
     unsigned char* signature_str = _generate_signature_str(verb, resource_name, date, content_type, checksum_value, amz_headers);
     char* escaped_str = g_strescape((char*) signature_str, NULL);
@@ -137,14 +137,12 @@ static char* _net_compute_signature(const ds3_log* log, const ds3_creds* creds, 
     ds3_log_message(log, DS3_DEBUG, "signature string: %s", escaped_str);
     g_free(escaped_str);
 
-    hmac = g_hmac_new(G_CHECKSUM_SHA1, (unsigned char*) creds->secret_key->value, creds->secret_key->size);
-    g_hmac_update(hmac, signature_str, strlen((const char*)signature_str));
-    g_hmac_get_digest(hmac, buffer, &bufSize);
-
+    HMAC((const EVP_MD*)EVP_sha1(), (unsigned char*) creds->secret_key->value, creds->secret_key->size,                                                  
+	 signature_str, strlen((const char*)signature_str), buffer, &bufSize); 
+    
     signature = g_base64_encode(buffer, bufSize);
 
     g_free(signature_str);
-    g_hmac_unref(hmac);
 
     return signature;
 }
@@ -284,7 +282,7 @@ static char* _canonicalize_amz_headers(GHashTable* headers) {
 }
 
 static char* _canonicalized_resource(ds3_str* path, GHashTable* query_params) {
-    if (g_hash_table_contains(query_params, "delete")) {
+    if (g_hash_table_lookup(query_params, "delete")) {
         return g_strconcat(path->value, "?delete", NULL);
     } else {
         return g_strdup(path->value);
@@ -452,13 +450,13 @@ ds3_error* net_process_request(const ds3_client* client,
                 case HTTP_POST: {
                     curl_easy_setopt(handle, CURLOPT_CUSTOMREQUEST, "POST");
                     curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
-                    curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, request->length);
+                    curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, (curl_off_t)request->length);
                     break;
                 }
                 case HTTP_PUT: {
                     curl_easy_setopt(handle, CURLOPT_PUT, 1L);
                     curl_easy_setopt(handle, CURLOPT_UPLOAD, 1L);
-                    curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, request->length);
+                    curl_easy_setopt(handle, CURLOPT_INFILESIZE_LARGE, (curl_off_t)request->length);
                     break;
                 }
                 case HTTP_DELETE: {

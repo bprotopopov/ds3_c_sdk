@@ -16,14 +16,22 @@
 #ifndef __DS3_STRING_MULTIMAP__
 #define __DS3_STRING_MULTIMAP__
 
+#include <glib.h>
+
 #include "ds3_string.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct _ds3_string_multimap       ds3_string_multimap;
-typedef struct _ds3_string_multimap_entry ds3_string_multimap_entry;
+typedef struct _ds3_string_multimap {
+    GHashTable* hash; //key is ds3_str, values are a GPtrArray of ds3_str
+} ds3_string_multimap;
+
+typedef struct _ds3_string_multimap_entry{
+    ds3_str*   key;
+    GPtrArray* values; // A ds3_str list of the header values
+}ds3_string_multimap_entry;
 
 
 //opertions for manipulating a hash map as a ds3_str multi map
