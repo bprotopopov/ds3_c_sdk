@@ -1,0 +1,66 @@
+Name:		@PACKAGE_NAME@
+Version:	@PACKAGE_VERSION@
+Release:	@PACKAGE_RELEASE@
+Summary:	C library and headers with SpectraLogic S3 Deep Storage REST interface
+
+Group:		Development/Libraries
+License:	Apache V2
+URL:		https://github.com/bprotopopov/ds3_c_sdk
+Source:		%{name}-%{version}.tar.bz2
+BuildRoot:	%{_tmppath}/%{name}-%{version}-root
+
+BuildRequires:	glib2-devel >= 2.28
+BuildRequires:	libcurl-devel >= 7.19
+BuildRequires:	libxml2-devel >= 2.7
+
+Requires:	glib2 >= 2.28
+Requires:	libcurl >= 7.19
+Requires:	libxml2 >= 2.7
+
+
+%description
+Development package with C library and header files for using the SpectraLogic S3 Deep Storage REST interface.
+
+%prep
+%setup -q
+
+
+%build
+%configure
+make %{?_smp_mflags}
+
+
+%install
+rm -rf $RPM_BUILD_ROOT
+make install DESTDIR=$RPM_BUILD_ROOT
+
+
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+
+%files
+%defattr(644,root,root,-)
+%{_includedir}/ds3.h
+%{_includedir}/ds3_net.h
+%{_includedir}/ds3_request.h
+%{_includedir}/ds3_string.h
+%{_includedir}/ds3_string_multimap.h
+%{_includedir}/ds3_string_multimap_impl.h
+%{_includedir}/ds3_utils.h
+%{_libdir}/pkgconfig/libds3.pc
+%defattr(755,root,root,-)
+%{_libdir}/libds3.a
+%{_libdir}/libds3.la
+%{_libdir}/libds3.so.0.0.0
+%defattr(777,root,root,-)
+%{_libdir}/libds3.so
+%{_libdir}/libds3.so.0
+%doc
+
+
+
+%changelog
+* Tue Sep 27 2016 - Boris Protopopov <boris.protopopov@actifio.com>
+- Initial version
+

@@ -1,4 +1,4 @@
-AC_INIT([ds3], [1.2.0], [SDKDeveloper@spectralogic.com])
+AC_INIT([libds3], [1.2.0], [SDKDeveloper@spectralogic.com])
 AC_CONFIG_MACRO_DIR([m4])
 AC_PROG_CC
 
@@ -18,7 +18,9 @@ PKG_CHECK_MODULES([LIBXML2], $LIBXML2_CHECK)
 LIBDS3_DEPENDENCIES="$GLIB2_CHECK $LIBCURL_CHECK $LIBXML2_CHECK"
 AC_SUBST([LIBDS3_DEPENDENCIES])
 
+AC_SUBST([PACKAGE_RELEASE], m4_esyscmd([git describe --tags | cut -f2-3 -d'-' | tr -s '-' '_']))
+
 AC_CONFIG_HEADERS([config.h])
-AC_CONFIG_FILES([Makefile src/Makefile libds3.pc])
+AC_CONFIG_FILES([Makefile src/Makefile ${PACKAGE_NAME}.pc ${PACKAGE_NAME}.spec])
 AC_OUTPUT
 
